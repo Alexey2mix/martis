@@ -326,13 +326,3 @@ function severcon_get_current_url() {
     global $wp;
     return home_url( add_query_arg( [], $wp->request ) );
 }
-
-/**
- * Сокращение текста
- */
-function severcon_trim_text( $text, $length = 100, $more = '...' ) {
-    if ( mb_strlen( $text ) > $length ) {
-        $text = mb_substr( $text, 0, $length ) . $more;
-    }
-    return $text;
-}

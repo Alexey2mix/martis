@@ -297,3 +297,13 @@ if ( ! function_exists( 'dump' ) && defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         echo '</pre>';
     }
 }
+
+
+// Проверка регистрации меню в functions.php
+add_action('after_setup_theme', function() {
+    register_nav_menus([
+        'primary' => __('Основное меню', 'severcon'),
+        'footer'  => __('Меню в подвале', 'severcon'),
+        'mobile'  => __('Мобильное меню', 'severcon'),
+    ]);
+});

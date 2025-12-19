@@ -111,6 +111,11 @@ function severcon_cart_fragments( $fragments ) {
         return $fragments;
     }
     
+    // Проверяем, инициализирована ли корзина
+    if ( ! WC()->cart ) {
+        return $fragments;
+    }
+    
     ob_start();
     ?>
     <span class="cart-count">
@@ -135,6 +140,11 @@ function severcon_cart_fragments( $fragments ) {
  * Изменение текста кнопки "В корзину" в архивах товаров
  */
 function severcon_custom_add_to_cart_text( $text, $product ) {
+    // Важно: проверяем, что $product является объектом WC_Product
+    if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+        return $text; // возвращаем оригинальный текст
+    }
+    
     if ( $product->is_type( 'variable' ) ) {
         return __( 'Выбрать вариант', 'severcon' );
     }
@@ -153,8 +163,13 @@ function severcon_custom_add_to_cart_text( $text, $product ) {
 /**
  * Изменение текста кнопки на странице товара
  */
-function severcon_custom_single_add_to_cart_text() {
+function severcon_custom_single_add_to_cart_text( $text = '' ) {
     global $product;
+    
+    // Важно: проверяем, существует ли объект товара
+    if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+        return $text ?: __( 'Добавить в корзину', 'severcon' ); // возвращаем оригинальный или стандартный текст
+    }
     
     if ( ! $product->is_in_stock() ) {
         return __( 'Нет в наличии', 'severcon' );
@@ -211,6 +226,11 @@ function severcon_get_cart_count() {
         return 0;
     }
     
+    // Проверяем, инициализирована ли корзина
+    if ( ! WC()->cart ) {
+        return 0;
+    }
+    
     return WC()->cart->get_cart_contents_count();
 }
 
@@ -222,6 +242,11 @@ function severcon_get_cart_total() {
         return 0;
     }
     
+    // Проверяем, инициализирована ли корзина
+    if ( ! WC()->cart ) {
+        return 0;
+    }
+    
     return WC()->cart->get_cart_total();
 }
 
@@ -229,15 +254,20 @@ function severcon_get_cart_total() {
 // ФИЛЬТРЫ ДЛЯ КАСТОМИЗАЦИИ
 // ============================================================================
 
-/**
- * Фильтр для изменения HTML вывода цены
- */
 add_action( 'init', function() {
     if ( ! class_exists( 'WooCommerce' ) ) {
         return;
     }
     
+    /**
+     * Фильтр для изменения HTML вывода цены
+     */
     add_filter( 'woocommerce_get_price_html', function( $price, $product ) {
+        // Проверяем объект товара
+        if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+            return $price;
+        }
+        
         if ( $product->is_on_sale() ) {
             $price = '<span class="price sale-price">' . $price . '</span>';
             $price .= '<span class="sale-badge">' . __( 'Скидка', 'severcon' ) . '</span>';
@@ -259,6 +289,11 @@ add_action( 'init', function() {
      * Фильтр для изменения количества товаров вверх/вниз
      */
     add_filter( 'woocommerce_quantity_input_args', function( $args, $product ) {
+        // Проверяем объект товара
+        if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+            return $args;
+        }
+        
         $args['input_value'] = 1; // Начальное значение
         $args['max_value'] = $product->get_max_purchase_quantity(); // Максимум
         $args['min_value'] = $product->get_min_purchase_quantity(); // Минимум
@@ -283,6 +318,11 @@ add_action( 'init', function() {
     add_action( 'woocommerce_product_meta_start', function() {
         global $product;
         
+        // Проверяем объект товара
+        if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+            return;
+        }
+        
         if ( $product->get_sku() ) {
             echo '<span class="sku-wrapper">';
             echo '<span class="sku-label">' . __( 'Артикул:', 'severcon' ) . '</span> ';
@@ -298,6 +338,11 @@ add_action( 'init', function() {
     add_action( 'woocommerce_before_shop_loop_item_title', function() {
         global $product;
         
+        // Важно: проверяем объект товара
+        if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+            return;
+        }
+        
         // Проверяем, существует ли функция (она в helpers.php)
         if ( function_exists( 'severcon_is_new_product' ) ) {
             if ( severcon_is_new_product( $product->get_id(), 30 ) ) {
@@ -311,6 +356,16 @@ add_action( 'init', function() {
      * Функция находится в quick-view-handler.php
      */
     if ( function_exists( 'severcon_add_quick_view_button' ) ) {
-        add_action( 'woocommerce_after_shop_loop_item', 'severcon_add_quick_view_button', 20 );
+        add_action( 'woocommerce_after_shop_loop_item', function() {
+            global $product;
+            
+            // Проверяем объект товара
+            if ( ! $product || ! is_a( $product, 'WC_Product' ) ) {
+                return;
+            }
+            
+            // Вызываем функцию из quick-view-handler.php
+            severcon_add_quick_view_button();
+        }, 20 );
     }
 } );

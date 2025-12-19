@@ -80,7 +80,6 @@
                         'container'       => false,
                         'fallback_cb'     => false,
                         'depth'           => 3,
-                        'walker'          => new Severcon_Walker_Nav_Menu(), // Если будете создавать кастомный walker
                     ] );
                     ?>
                 </nav><!-- #site-navigation -->

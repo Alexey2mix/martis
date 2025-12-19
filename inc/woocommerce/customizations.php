@@ -27,6 +27,7 @@ function severcon_init_woocommerce_customizations() {
     // ========================================================================
     
     // Удаляем стандартные breadcrumbs WooCommerce
+    // Наши breadcrumbs в inc/components/breadcrumbs.php
     remove_action( 'woocommerce_before_main_content', 'woocommerce_breadcrumb', 20 );
     
     // Удаляем рейтинг из цикла товаров
@@ -73,9 +74,6 @@ function severcon_init_woocommerce_customizations() {
     // Перемещаем описание товара после атрибутов
     remove_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_excerpt', 20 );
     add_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_excerpt', 35 );
-    
-    // Добавляем кнопку "Быстрый просмотр"
-    add_action( 'woocommerce_after_shop_loop_item', 'severcon_add_quick_view_button', 20 );
     
     // ========================================================================
     // 5. ФИЛЬТРЫ И СОРТИРОВКА
@@ -195,30 +193,6 @@ function severcon_gallery_thumbnail_size( $size ) {
 }
 
 // ============================================================================
-// ДОПОЛНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ ИНТЕРФЕЙСА
-// ============================================================================
-
-/**
- * Добавление кнопки "Быстрый просмотр" в цикле товаров
- */
-function severcon_add_quick_view_button() {
-    global $product;
-    
-    if ( ! $product ) {
-        return;
-    }
-    
-    ?>
-    <button type="button" 
-            class="quick-view-button" 
-            data-product-id="<?php echo esc_attr( $product->get_id() ); ?>"
-            aria-label="<?php echo esc_attr( sprintf( __( 'Быстрый просмотр %s', 'severcon' ), $product->get_name() ) ); ?>">
-        <?php _e( 'Быстрый просмотр', 'severcon' ); ?>
-    </button>
-    <?php
-}
-
-// ============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ТОЛЬКО УНИКАЛЬНЫЕ)
 // ============================================================================
 
@@ -331,4 +305,12 @@ add_action( 'init', function() {
             }
         }
     }, 5 );
+    
+    /**
+     * Добавление кнопки "Быстрый просмотр" в цикле товаров
+     * Функция находится в quick-view-handler.php
+     */
+    if ( function_exists( 'severcon_add_quick_view_button' ) ) {
+        add_action( 'woocommerce_after_shop_loop_item', 'severcon_add_quick_view_button', 20 );
+    }
 } );

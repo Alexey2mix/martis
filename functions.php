@@ -90,6 +90,11 @@ if ( class_exists( 'WooCommerce' ) ) {
 // 5. AJAX ОБРАБОТЧИКИ
 severcon_safe_require( 'inc/ajax/request-handler.php' );
 severcon_safe_require( 'inc/ajax/news-handler.php' );
+severcon_safe_require('inc/ajax/ajax-router.php');
+
+// Инициализируем роутер
+$severcon_ajax_router = severcon_init_ajax_router();
+
 
 // 6. СТИЛИ И СКРИПТЫ
 severcon_safe_require( 'inc/setup/assets.php' );

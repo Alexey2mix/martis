@@ -175,24 +175,6 @@ function severcon_get_js_config() {
 }
 
 /**
- * Логирование для отладки (работает только при WP_DEBUG = true)
- */
-function severcon_log( $message, $data = null ) {
-    if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) {
-        return;
-    }
-    
-    $log_entry = '[' . current_time( 'mysql' ) . '] ' . $message;
-    
-    if ( $data !== null ) {
-        // Безопасный вывод любых данных
-        $log_entry .= ' ' . wp_json_encode( $data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE );
-    }
-    
-    error_log( $log_entry );
-}
-
-/**
  * Получение HTML-атрибутов для body
  */
 function severcon_get_body_attributes() {
@@ -287,6 +269,10 @@ add_action( 'wp_head', function() {
  * ============================================================================
  */
 
+// УДАЛЕНО: severcon_trim_text() - теперь в helpers.php
+// УДАЛЕНО: severcon_get_current_url() - теперь в helpers.php
+// УДАЛЕНО: severcon_is_admin_page() - теперь в helpers.php
+
 if ( ! function_exists( 'dd' ) && defined( 'WP_DEBUG' ) && WP_DEBUG ) {
     /**
      * Dump and die - для отладки
@@ -310,19 +296,4 @@ if ( ! function_exists( 'dump' ) && defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         var_dump( $variable );
         echo '</pre>';
     }
-}
-
-/**
- * Проверка на странице ли мы админки
- */
-function severcon_is_admin_page() {
-    return is_admin() && ! wp_doing_ajax();
-}
-
-/**
- * Получение текущего URL
- */
-function severcon_get_current_url() {
-    global $wp;
-    return home_url( add_query_arg( [], $wp->request ) );
 }

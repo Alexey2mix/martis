@@ -1,271 +1,402 @@
 <?php
 /**
- * Кастомизации WooCommerce
+ * WooCommerce кастомизации для темы Severcon
+ * 
+ * @package Severcon
  */
 
-if (!defined('ABSPATH')) {
-    exit;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
-/**
- * Инициализация WooCommerce кастомизаций
- */
-function severcon_init_woocommerce() {
-    if (!class_exists('WooCommerce')) {
+// ============================================================================
+// ИНИЦИАЛИЗАЦИЯ WOOCOMMERCE ФУНКЦИЙ
+// ============================================================================
+
+add_action( 'init', 'severcon_init_woocommerce_customizations' );
+
+function severcon_init_woocommerce_customizations() {
+    
+    // Проверяем, установлен ли WooCommerce
+    if ( ! class_exists( 'WooCommerce' ) ) {
         return;
     }
     
-    // Убираем стандартные стили WooCommerce
-    add_filter('woocommerce_enqueue_styles', '__return_empty_array');
+    // ========================================================================
+    // 1. НАСТРОЙКИ ТОВАРОВ И КАТАЛОГА
+    // ========================================================================
     
-    // Изменяем количество товаров на странице
-    add_filter('loop_shop_per_page', 'severcon_products_per_page', 20);
+    // Удаляем стандартные breadcrumbs WooCommerce
+    // Наши breadcrumbs в inc/components/breadcrumbs.php
+    remove_action( 'woocommerce_before_main_content', 'woocommerce_breadcrumb', 20 );
     
-    // Кастомизация хлебных крошек
-    add_filter('woocommerce_breadcrumb_defaults', 'severcon_breadcrumbs');
+    // Удаляем рейтинг из цикла товаров
+    remove_action( 'woocommerce_after_shop_loop_item_title', 'woocommerce_template_loop_rating', 5 );
     
-    // Изменяем структуру заголовка на странице товара
-    remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_title', 5);
-    add_action('woocommerce_before_single_product', 'severcon_single_product_title', 5);
+    // Изменяем позицию кнопки "В корзину"
+    remove_action( 'woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart', 10 );
+    add_action( 'woocommerce_before_shop_loop_item_title', 'woocommerce_template_loop_add_to_cart', 15 );
     
-    // Убираем таб с отзывами
-    add_filter('woocommerce_product_tabs', 'severcon_remove_reviews_tab', 98);
+    // ========================================================================
+    // 2. КОРЗИНА И КНОПКИ "КУПИТЬ"
+    // ========================================================================
     
-    // Добавляем кнопку "Запросить цену" вместо "Добавить в корзину"
-    remove_action('woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart', 10);
-    remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30);
-    add_action('woocommerce_after_shop_loop_item', 'severcon_product_request_button', 10);
-    add_action('woocommerce_single_product_summary', 'severcon_single_product_request_button', 30);
+    // AJAX обновление корзины
+    add_filter( 'woocommerce_add_to_cart_fragments', 'severcon_cart_fragments' );
+    
+    // Изменение текста кнопки "В корзину" в архивах
+    add_filter( 'woocommerce_product_add_to_cart_text', 'severcon_custom_add_to_cart_text', 10, 2 );
+    
+    // Изменение текста кнопки на странице товара
+    add_filter( 'woocommerce_product_single_add_to_cart_text', 'severcon_custom_single_add_to_cart_text' );
+    
+    // ========================================================================
+    // 3. НАСТРОЙКИ ОТОБРАЖЕНИЯ
+    // ========================================================================
+    
+    // Количество товаров на странице
+    add_filter( 'loop_shop_per_page', 'severcon_products_per_page', 20 );
+    
+    // Количество колонок
+    add_filter( 'loop_shop_columns', 'severcon_shop_columns' );
+    
+    // Миниатюры товаров
+    add_filter( 'woocommerce_get_image_size_gallery_thumbnail', 'severcon_gallery_thumbnail_size' );
+    
+    // ========================================================================
+    // 4. КАСТОМИЗАЦИЯ СТРАНИЦЫ ТОВАРА
+    // ========================================================================
+    
+    // Изменение порядка элементов на странице товара
+    remove_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_rating', 10 );
+    add_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_rating', 15 );
+    
+    // Перемещаем описание товара после атрибутов
+    remove_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_excerpt', 20 );
+    add_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_excerpt', 35 );
+    
+    // Добавляем кнопку "Быстрый просмотр"
+    add_action( 'woocommerce_after_shop_loop_item', 'severcon_add_quick_view_button', 20 );
+    
+    // ========================================================================
+    // 5. ФИЛЬТРЫ И СОРТИРОВКА
+    // ========================================================================
+    
+    // Удаляем стандартную сортировку если используем свою
+    remove_action( 'woocommerce_before_shop_loop', 'woocommerce_catalog_ordering', 30 );
+    
+    // Удаляем стандартный вывод количества товаров
+    remove_action( 'woocommerce_before_shop_loop', 'woocommerce_result_count', 20 );
+    
+    // ========================================================================
+    // 6. ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ
+    // ========================================================================
+    
+    // Включаем галерею товаров
+    add_theme_support( 'wc-product-gallery-zoom' );
+    add_theme_support( 'wc-product-gallery-lightbox' );
+    add_theme_support( 'wc-product-gallery-slider' );
+    
+    // Отключаем стили WooCommerce по умолчанию
+    add_filter( 'woocommerce_enqueue_styles', '__return_empty_array' );
+    
 }
-add_action('init', 'severcon_init_woocommerce');
+
+// ============================================================================
+// ФУНКЦИИ КОРЗИНЫ
+// ============================================================================
+
+/**
+ * AJAX обновление содержимого корзины
+ */
+function severcon_cart_fragments( $fragments ) {
+    if ( ! class_exists( 'WooCommerce' ) ) {
+        return $fragments;
+    }
+    
+    ob_start();
+    ?>
+    <span class="cart-count">
+        <?php echo WC()->cart->get_cart_contents_count(); ?>
+    </span>
+    <?php
+    $fragments['span.cart-count'] = ob_get_clean();
+    
+    // Обновляем общую сумму
+    ob_start();
+    ?>
+    <span class="cart-total">
+        <?php echo WC()->cart->get_cart_total(); ?>
+    </span>
+    <?php
+    $fragments['span.cart-total'] = ob_get_clean();
+    
+    return $fragments;
+}
+
+/**
+ * Изменение текста кнопки "В корзину" в архивах товаров
+ */
+function severcon_custom_add_to_cart_text( $text, $product ) {
+    if ( $product->is_type( 'variable' ) ) {
+        return __( 'Выбрать вариант', 'severcon' );
+    }
+    
+    if ( $product->is_type( 'external' ) ) {
+        return __( 'Подробнее', 'severcon' );
+    }
+    
+    if ( ! $product->is_in_stock() ) {
+        return __( 'Нет в наличии', 'severcon' );
+    }
+    
+    return __( 'В корзину', 'severcon' );
+}
+
+/**
+ * Изменение текста кнопки на странице товара
+ */
+function severcon_custom_single_add_to_cart_text() {
+    global $product;
+    
+    if ( ! $product->is_in_stock() ) {
+        return __( 'Нет в наличии', 'severcon' );
+    }
+    
+    return __( 'Добавить в корзину', 'severcon' );
+}
+
+// ============================================================================
+// НАСТРОЙКИ ОТОБРАЖЕНИЯ
+// ============================================================================
 
 /**
  * Количество товаров на странице
  */
-function severcon_products_per_page($products_per_page) {
-    // Показывать все товары если передан параметр show_all
-    if (isset($_GET['show_all']) && $_GET['show_all'] === 'true') {
-        return 48; // Большое число для показа всех
-    }
-    
-    // Разное количество для разных страниц
-    if (is_shop() || is_product_category() || is_product_tag()) {
-        return 12; // Основные страницы
-    }
-    
-    if (is_product()) {
-        return 4; // Похожие товары
-    }
-    
-    return $products_per_page;
+function severcon_products_per_page( $cols ) {
+    return 12; // 12 товаров на странице
 }
 
 /**
- * Кастомизация хлебных крошек
+ * Количество колонок в сетке товаров
  */
-function severcon_breadcrumbs() {
+function severcon_shop_columns() {
+    return 3; // 3 колонки на десктопе
+}
+
+/**
+ * Размер миниатюр галереи
+ */
+function severcon_gallery_thumbnail_size( $size ) {
     return array(
-        'delimiter'   => ' <span class="breadcrumb-separator">›</span> ',
-        'wrap_before' => '<nav class="woocommerce-breadcrumb" aria-label="' . __('Хлебные крошки', 'severcon') . '">',
-        'wrap_after'  => '</nav>',
-        'before'      => '',
-        'after'       => '',
-        'home'        => __('Главная', 'severcon'),
+        'width'  => 150,
+        'height' => 150,
+        'crop'   => 1,
     );
 }
 
-/**
- * Заголовок товара на странице товара
- */
-function severcon_single_product_title() {
-    ?>
-    <div class="single-product-header">
-        <h1 class="product-title"><?php the_title(); ?></h1>
-        <?php if (wc_review_ratings_enabled()) : ?>
-            <div class="product-rating">
-                <?php echo wc_get_rating_html($product->get_average_rating()); ?>
-                <?php if ($product->get_review_count()) : ?>
-                    <span class="review-count">
-                        (<?php echo esc_html($product->get_review_count()); ?> <?php echo _n('отзыв', 'отзывов', $product->get_review_count(), 'severcon'); ?>)
-                    </span>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
-    </div>
-    <?php
-}
+// ============================================================================
+// ДОПОЛНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ ИНТЕРФЕЙСА
+// ============================================================================
 
 /**
- * Удаление таба с отзывами
+ * Добавление кнопки "Быстрый просмотр" в цикле товаров
  */
-function severcon_remove_reviews_tab($tabs) {
-    unset($tabs['reviews']);
-    return $tabs;
-}
-
-/**
- * Кнопка "Запросить цену" в списке товаров
- */
-function severcon_product_request_button() {
+function severcon_add_quick_view_button() {
     global $product;
     
-    if (!$product) {
+    if ( ! $product ) {
         return;
     }
     
     ?>
-    <div class="product-actions">
-        <a href="<?php echo esc_url($product->get_permalink()); ?>" 
-           class="button product-details-btn">
-            <?php _e('Подробнее', 'severcon'); ?>
-        </a>
-        
-        <button type="button" 
-                class="button alt product-request-btn" 
-                data-product-id="<?php echo esc_attr($product->get_id()); ?>"
-                data-product-name="<?php echo esc_attr($product->get_name()); ?>">
-            <i class="fas fa-envelope"></i>
-            <?php _e('Запросить цену', 'severcon'); ?>
-        </button>
-    </div>
+    <button type="button" 
+            class="quick-view-button" 
+            data-product-id="<?php echo esc_attr( $product->get_id() ); ?>"
+            aria-label="<?php echo esc_attr( sprintf( __( 'Быстрый просмотр %s', 'severcon' ), $product->get_name() ) ); ?>">
+        <?php _e( 'Быстрый просмотр', 'severcon' ); ?>
+    </button>
     <?php
 }
 
+// ============================================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================================================
+
 /**
- * Кнопка "Запросить цену" на странице товара
+ * Проверка, включена ли поддержка WooCommerce
  */
-function severcon_single_product_request_button() {
-    global $product;
-    
-    if (!$product) {
-        return;
+function severcon_woocommerce_is_active() {
+    return class_exists( 'WooCommerce' );
+}
+
+/**
+ * Получение количества товаров в корзине
+ */
+function severcon_get_cart_count() {
+    if ( ! severcon_woocommerce_is_active() ) {
+        return 0;
     }
     
+    return WC()->cart->get_cart_contents_count();
+}
+
+/**
+ * Получение общей суммы корзины
+ */
+function severcon_get_cart_total() {
+    if ( ! severcon_woocommerce_is_active() ) {
+        return 0;
+    }
+    
+    return WC()->cart->get_cart_total();
+}
+
+/**
+ * Получение цены товара с учетом скидки
+ */
+function severcon_get_product_price_html( $product_id = null ) {
+    if ( ! severcon_woocommerce_is_active() ) {
+        return '';
+    }
+    
+    $product = wc_get_product( $product_id );
+    
+    if ( ! $product ) {
+        return '';
+    }
+    
+    return $product->get_price_html();
+}
+
+/**
+ * Проверка, новый ли товар (добавлен менее N дней назад)
+ */
+function severcon_is_new_product( $product_id, $days = 7 ) {
+    if ( ! severcon_woocommerce_is_active() ) {
+        return false;
+    }
+    
+    $product = wc_get_product( $product_id );
+    
+    if ( ! $product ) {
+        return false;
+    }
+    
+    $date_created = $product->get_date_created();
+    
+    if ( ! $date_created ) {
+        return false;
+    }
+    
+    $now = new DateTime();
+    $created = new DateTime( $date_created->format( 'Y-m-d H:i:s' ) );
+    $interval = $now->diff( $created );
+    
+    return $interval->days <= $days;
+}
+
+/**
+ * Получение рейтинга товара в виде HTML
+ */
+function severcon_get_product_rating_html( $product_id = null ) {
+    if ( ! severcon_woocommerce_is_active() ) {
+        return '';
+    }
+    
+    $product = wc_get_product( $product_id );
+    
+    if ( ! $product ) {
+        return '';
+    }
+    
+    $rating_count = $product->get_rating_count();
+    $average_rating = $product->get_average_rating();
+    
+    if ( $rating_count <= 0 ) {
+        return '';
+    }
+    
+    ob_start();
     ?>
-    <div class="single-product-request">
-        <div class="price-section">
-            <span class="price-label"><?php _e('Цена:', 'severcon'); ?></span>
-            <span class="price"><?php echo $product->get_price_html(); ?></span>
+    <div class="severcon-product-rating">
+        <div class="star-rating" role="img" aria-label="<?php echo esc_attr( sprintf( __( 'Рейтинг %s из 5', 'severcon' ), $average_rating ) ); ?>">
+            <span style="width:<?php echo esc_attr( ( $average_rating / 5 ) * 100 ); ?>%">
+                <?php printf( __( 'Рейтинг %s из 5', 'severcon' ), '<strong class="rating">' . esc_html( $average_rating ) . '</strong>' ); ?>
+            </span>
         </div>
-        
-        <button type="button" 
-                class="single-product-request-btn" 
-                data-product-id="<?php echo esc_attr($product->get_id()); ?>"
-                data-product-name="<?php echo esc_attr(get_the_title()); ?>">
-            <i class="fas fa-envelope"></i>
-            <span><?php _e('Запросить цену и консультацию', 'severcon'); ?></span>
-        </button>
-        
-        <div class="product-meta">
-            <?php if (wc_product_sku_enabled() && ($sku = $product->get_sku())) : ?>
-                <div class="sku">
-                    <strong><?php _e('Артикул:', 'severcon'); ?></strong> 
-                    <span><?php echo esc_html($sku); ?></span>
-                </div>
-            <?php endif; ?>
-            
-            <div class="categories">
-                <strong><?php _e('Категории:', 'severcon'); ?></strong>
-                <?php echo wc_get_product_category_list($product->get_id(), ', '); ?>
-            </div>
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * Кастомизация миниатюр товаров
- */
-function severon_product_thumbnail_size($size) {
-    return 'severcon-product-medium';
-}
-add_filter('single_product_archive_thumbnail_size', 'seviron_product_thumbnail_size');
-add_filter('subcategory_archive_thumbnail_size', 'seviron_product_thumbnail_size');
-
-/**
- * Изменение порядка элементов на странице товара
- */
-function severcon_reorder_single_product() {
-    // Галерея изображений
-    remove_action('woocommerce_before_single_product_summary', 'woocommerce_show_product_images', 20);
-    add_action('woocommerce_before_single_product_summary', 'severcon_custom_product_gallery', 20);
-    
-    // Краткое описание
-    remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_excerpt', 20);
-    add_action('woocommerce_single_product_summary', 'woocommerce_template_single_excerpt', 15);
-}
-add_action('init', 'severcon_reorder_single_product');
-
-/**
- * Кастомная галерея товара
- */
-function severcon_custom_product_gallery() {
-    global $product;
-    
-    $attachment_ids = $product->get_gallery_image_ids();
-    $post_thumbnail_id = $product->get_image_id();
-    
-    ?>
-    <div class="severcon-product-gallery">
-        <div class="gallery-main">
-            <?php if ($post_thumbnail_id) : ?>
-                <div class="main-image">
-                    <?php echo wp_get_attachment_image($post_thumbnail_id, 'severcon-product-large'); ?>
-                </div>
-            <?php else : ?>
-                <div class="main-image placeholder">
-                    <?php echo wc_placeholder_img('severcon-product-large'); ?>
-                </div>
-            <?php endif; ?>
-        </div>
-        
-        <?php if ($attachment_ids || $post_thumbnail_id) : ?>
-            <div class="gallery-thumbs">
-                <?php if ($post_thumbnail_id) : ?>
-                    <div class="thumb active">
-                        <?php echo wp_get_attachment_image($post_thumbnail_id, 'severcon-product-thumb'); ?>
-                    </div>
-                <?php endif; ?>
-                
-                <?php foreach ($attachment_ids as $attachment_id) : ?>
-                    <div class="thumb">
-                        <?php echo wp_get_attachment_image($attachment_id, 'severcon-product-thumb'); ?>
-                    </div>
-                <?php endforeach; ?>
-            </div>
+        <?php if ( $rating_count > 0 ) : ?>
+            <span class="rating-count">
+                (<?php echo esc_html( $rating_count ); ?>)
+            </span>
         <?php endif; ?>
     </div>
     <?php
+    return ob_get_clean();
 }
 
+// ============================================================================
+// ФИЛЬТРЫ ДЛЯ КАСТОМИЗАЦИИ
+// ============================================================================
+
 /**
- * Добавление классов к телу для страниц WooCommerce
+ * Фильтр для изменения HTML вывода цены
  */
-function severcon_woocommerce_body_class($classes) {
-    if (severcon_is_woocommerce_page()) {
-        $classes[] = 'woocommerce-page';
-        
-        if (is_product()) {
-            $classes[] = 'single-product-page';
-        }
-        
-        if (is_shop() || is_product_category() || is_product_tag()) {
-            $classes[] = 'product-archive-page';
-        }
+add_filter( 'woocommerce_get_price_html', function( $price, $product ) {
+    if ( $product->is_on_sale() ) {
+        $price = '<span class="price sale-price">' . $price . '</span>';
+        $price .= '<span class="sale-badge">' . __( 'Скидка', 'severcon' ) . '</span>';
     }
     
-    return $classes;
-}
-add_filter('body_class', 'severcon_woocommerce_body_class');
+    return $price;
+}, 10, 2 );
 
 /**
- * Кастомизация пагинации WooCommerce
+ * Фильтр для изменения количества связанных товаров
  */
-function severcon_woocommerce_pagination_args($args) {
-    $args['prev_text'] = '<i class="fas fa-chevron-left"></i> ' . __('Назад', 'severcon');
-    $args['next_text'] = __('Вперед', 'severcon') . ' <i class="fas fa-chevron-right"></i>';
-    $args['type'] = 'list';
+add_filter( 'woocommerce_output_related_products_args', function( $args ) {
+    $args['posts_per_page'] = 4; // 4 связанных товара
+    $args['columns'] = 4; // 4 колонки
+    return $args;
+} );
+
+/**
+ * Фильтр для изменения количества товаров вверх/вниз
+ */
+add_filter( 'woocommerce_quantity_input_args', function( $args, $product ) {
+    $args['input_value'] = 1; // Начальное значение
+    $args['max_value'] = $product->get_max_purchase_quantity(); // Максимум
+    $args['min_value'] = $product->get_min_purchase_quantity(); // Минимум
+    $args['step'] = 1; // Шаг
     
     return $args;
-}
-add_filter('woocommerce_pagination_args', 'severcon_woocommerce_pagination_args');
+}, 10, 2 );
+
+// ============================================================================
+// ХУКИ ДЛЯ ВЫВОДА ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ
+// ============================================================================
+
+/**
+ * Вывод дополнительной информации на странице товара
+ */
+add_action( 'woocommerce_product_meta_start', function() {
+    global $product;
+    
+    if ( $product->get_sku() ) {
+        echo '<span class="sku-wrapper">';
+        echo '<span class="sku-label">' . __( 'Артикул:', 'severcon' ) . '</span> ';
+        echo '<span class="sku">' . esc_html( $product->get_sku() ) . '</span>';
+        echo '</span>';
+    }
+} );
+
+/**
+ * Вывод блока "Новинка" для новых товаров
+ */
+add_action( 'woocommerce_before_shop_loop_item_title', function() {
+    global $product;
+    
+    if ( severcon_is_new_product( $product->get_id(), 30 ) ) {
+        echo '<span class="new-badge">' . __( 'Новинка', 'severcon' ) . '</span>';
+    }
+}, 5 );

@@ -1,23 +1,263 @@
 <?php
 /**
- * Обработчик фильтрации товаров
+ * Оптимизированная система фильтрации товаров WooCommerce
+ * Версия с кэшированием и оптимизированными запросами
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
+// ============================================================================
+// 1. ИНИЦИАЛИЗАЦИЯ
+// ============================================================================
+
 /**
  * Инициализация AJAX обработчиков фильтрации
  */
 function severcon_init_filter_handlers() {
+    // Основные обработчики фильтрации
     add_action('wp_ajax_filter_category_products', 'severcon_ajax_filter_category_products');
     add_action('wp_ajax_nopriv_filter_category_products', 'severcon_ajax_filter_category_products');
     
-    add_action('wp_ajax_update_filter_counts', 'severcon_ajax_update_filter_counts');
-    add_action('wp_ajax_nopriv_update_filter_counts', 'severcon_ajax_update_filter_counts');
+    // Оптимизированный обработчик счетчиков
+    add_action('wp_ajax_update_filter_counts', 'severcon_ajax_optimized_update_filter_counts');
+    add_action('wp_ajax_nopriv_update_filter_counts', 'severcon_ajax_optimized_update_filter_counts');
+    
+    // Очистка кэша при обновлении товаров
+    add_action('save_post_product', 'severcon_clear_filter_cache');
+    add_action('edited_product_cat', 'severcon_clear_filter_cache');
+    add_action('edited_product_tag', 'severcon_clear_filter_cache');
 }
 add_action('init', 'severcon_init_filter_handlers');
+
+// ============================================================================
+// 2. СИСТЕМА КЭШИРОВАНИЯ
+// ============================================================================
+
+/**
+ * Генерация ключа кэша для фильтров
+ */
+function severcon_get_filter_cache_key($params) {
+    $key_data = [
+        'cat' => $params['category_id'] ?? 0,
+        'tax' => $params['taxonomy'] ?? '',
+        'term' => $params['term_slug'] ?? '',
+        'filters' => $params['active_filters'] ?? [],
+        'type' => $params['type'] ?? 'count'
+    ];
+    
+    return 'severcon_filter_' . md5(wp_json_encode($key_data));
+}
+
+/**
+ * Очистка кэша фильтров
+ */
+function severcon_clear_filter_cache($post_id = 0) {
+    // Очищаем все кэши фильтров при изменении товара
+    global $wpdb;
+    
+    $wpdb->query(
+        $wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+            '_transient_severcon_filter_%'
+        )
+    );
+    
+    $wpdb->query(
+        $wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+            '_transient_timeout_severcon_filter_%'
+        )
+    );
+}
+
+/**
+ * Получение кэшированного значения
+ */
+function severcon_get_cached_filter($cache_key) {
+    $cached = get_transient($cache_key);
+    return $cached !== false ? $cached : null;
+}
+
+/**
+ * Установка значения в кэш
+ */
+function severcon_set_cached_filter($cache_key, $value, $expiration = 1800) { // 30 минут
+    set_transient($cache_key, $value, $expiration);
+}
+
+// ============================================================================
+// 3. ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ПОДСЧЕТА
+// ============================================================================
+
+/**
+ * Оптимизированный подсчет товаров с кэшированием
+ */
+function severcon_optimized_count_products($category_id, $taxonomy, $term_slug, $active_filters) {
+    // Генерация ключа кэша
+    $cache_key = severcon_get_filter_cache_key([
+        'category_id' => $category_id,
+        'taxonomy' => $taxonomy,
+        'term_slug' => $term_slug,
+        'active_filters' => $active_filters,
+        'type' => 'count'
+    ]);
+    
+    // Пробуем получить из кэша
+    $cached = severcon_get_cached_filter($cache_key);
+    if ($cached !== null) {
+        return $cached;
+    }
+    
+    // Строим оптимизированный запрос
+    $args = severcon_build_count_query($category_id, $taxonomy, $term_slug, $active_filters);
+    
+    // Выполняем запрос
+    $query = new WP_Query($args);
+    $count = $query->found_posts;
+    
+    // Сохраняем в кэш
+    severcon_set_cached_filter($cache_key, $count);
+    
+    return $count;
+}
+
+/**
+ * Построение оптимизированного запроса для подсчета
+ */
+function severcon_build_count_query($category_id, $taxonomy, $term_slug, $active_filters) {
+    $args = [
+        'post_type' => 'product',
+        'post_status' => 'publish',
+        'posts_per_page' => 1, // Нам нужно только количество
+        'fields' => 'ids', // Только ID для экономии памяти
+        'no_found_rows' => false, // Нужно для found_posts
+        'update_post_meta_cache' => false, // Не кэшируем мета-данные
+        'update_post_term_cache' => false, // Не кэшируем термины
+        'tax_query' => ['relation' => 'AND']
+    ];
+    
+    // 1. Категория товаров
+    $args['tax_query'][] = [
+        'taxonomy' => 'product_cat',
+        'field' => 'term_id',
+        'terms' => $category_id,
+        'include_children' => true
+    ];
+    
+    // 2. Текущий термин атрибута
+    $args['tax_query'][] = [
+        'taxonomy' => $taxonomy,
+        'field' => 'slug',
+        'terms' => $term_slug
+    ];
+    
+    // 3. Активные фильтры (кроме текущего атрибута)
+    foreach ($active_filters as $filter_tax => $filter_terms) {
+        if ($filter_tax !== $taxonomy && !empty($filter_terms) && is_array($filter_terms)) {
+            $args['tax_query'][] = [
+                'taxonomy' => $filter_tax,
+                'field' => 'slug',
+                'terms' => array_map('sanitize_text_field', $filter_terms),
+                'operator' => 'IN'
+            ];
+        }
+    }
+    
+    return apply_filters('severcon_count_query_args', $args, $category_id, $taxonomy, $term_slug, $active_filters);
+}
+
+// ============================================================================
+// 4. ОБНОВЛЕННЫЕ AJAX ОБРАБОТЧИКИ
+// ============================================================================
+
+/**
+ * Оптимизированный AJAX обработчик обновления счетчиков
+ */
+function severcon_ajax_optimized_update_filter_counts() {
+    // Проверка безопасности
+    if (!severcon_verify_ajax_request('severcon_filter_nonce')) {
+        wp_send_json_error([
+            'message' => __('Ошибка безопасности', 'severcon'),
+            'code' => 'security_error'
+        ]);
+        return;
+    }
+    
+    // Получение параметров
+    $category_id = severcon_validate_id(severcon_get_post_var('category_id', 0));
+    $active_filters = severcon_clean_input(severcon_get_post_var('filters', []));
+    
+    if (!$category_id) {
+        wp_send_json_error([
+            'message' => __('Категория не указана', 'severcon'),
+            'code' => 'invalid_category'
+        ]);
+        return;
+    }
+    
+    // Получение оптимизированных счетчиков
+    $available_counts = severcon_get_optimized_filter_counts($category_id, $active_filters);
+    
+    wp_send_json_success($available_counts);
+    wp_die();
+}
+
+/**
+ * Получение оптимизированных счетчиков для фильтров
+ */
+function severcon_get_optimized_filter_counts($category_id, $active_filters) {
+    $attribute_taxonomies = wc_get_attribute_taxonomies();
+    $available_counts = [];
+    
+    // Группируем запросы по таксономии для дальнейшей оптимизации
+    foreach ($attribute_taxonomies as $attribute) {
+        $taxonomy = 'pa_' . $attribute->attribute_name;
+        
+        // Получаем все термины для этой таксономии
+        $terms = get_terms([
+            'taxonomy' => $taxonomy,
+            'hide_empty' => false,
+            'fields' => 'id=>slug'
+        ]);
+        
+        if (is_wp_error($terms) || empty($terms)) {
+            continue;
+        }
+        
+        // Подсчет для каждого термина
+        foreach ($terms as $term_id => $term_slug) {
+            $count = severcon_optimized_count_products($category_id, $taxonomy, $term_slug, $active_filters);
+            
+            // Добавляем только если есть товары или термин уже выбран
+            if ($count > 0 || severcon_is_term_selected($taxonomy, $term_slug, $active_filters)) {
+                if (!isset($available_counts[$taxonomy])) {
+                    $available_counts[$taxonomy] = [];
+                }
+                
+                $available_counts[$taxonomy][$term_slug] = $count;
+            }
+        }
+    }
+    
+    return $available_counts;
+}
+
+/**
+ * Проверка выбран ли термин
+ */
+function severcon_is_term_selected($taxonomy, $term_slug, $active_filters) {
+    if (!isset($active_filters[$taxonomy]) || !is_array($active_filters[$taxonomy])) {
+        return false;
+    }
+    
+    return in_array($term_slug, $active_filters[$taxonomy]);
+}
+
+// ============================================================================
+// 5. СУЩЕСТВУЮЩИЕ ФУНКЦИИ (сохраняем для обратной совместимости)
+// ============================================================================
 
 /**
  * AJAX фильтрация товаров категории
@@ -175,230 +415,69 @@ function severcon_add_orderby_to_query($args, $orderby) {
 }
 
 /**
- * AJAX обновление счетчиков фильтров
- */
-function severcon_ajax_update_filter_counts() {
-    // Проверка безопасности
-    if (!severcon_verify_ajax_request('severcon_filter_nonce')) {
-        return;
-    }
-    
-    $category_id = severcon_validate_id(severcon_get_post_var('category_id', 0));
-    $active_filters = severcon_clean_input(severcon_get_post_var('filters', array()));
-    
-    if (!$category_id) {
-        wp_send_json_error(array(
-            'message' => __('Категория не указана', 'severcon'),
-            'code'    => 'invalid_category'
-        ));
-    }
-    
-    // Получение доступных атрибутов
-    $available_counts = severcon_get_available_filter_counts($category_id, $active_filters);
-    
-    wp_send_json_success($available_counts);
-    wp_die();
-}
-
-/**
- * Получение доступных счетчиков для фильтров
+ * Получение доступных счетчиков для фильтров (старая версия для обратной совместимости)
  */
 function severcon_get_available_filter_counts($category_id, $active_filters) {
-    $attribute_taxonomies = wc_get_attribute_taxonomies();
-    $available_counts = array();
-    
-    foreach ($attribute_taxonomies as $attribute) {
-        $taxonomy = 'pa_' . $attribute->attribute_name;
-        
-        // Получаем термины для этого атрибута
-        $terms = get_terms(array(
-            'taxonomy'   => $taxonomy,
-            'hide_empty' => false,
-            'fields'     => 'id=>slug'
-        ));
-        
-        if (is_wp_error($terms) || empty($terms)) {
-            continue;
-        }
-        
-        foreach ($terms as $term_id => $term_slug) {
-            // Считаем товары с учетом текущих фильтров
-            $count = severcon_count_products_with_filters($category_id, $taxonomy, $term_slug, $active_filters);
-            
-            // Если товары есть или термин уже выбран - добавляем
-            if ($count > 0 || severcon_is_term_selected($taxonomy, $term_slug, $active_filters)) {
-                if (!isset($available_counts[$taxonomy])) {
-                    $available_counts[$taxonomy] = array();
-                }
-                
-                $available_counts[$taxonomy][$term_slug] = $count;
-            }
-        }
-    }
-    
-    return $available_counts;
+    // Используем новую оптимизированную функцию
+    return severcon_get_optimized_filter_counts($category_id, $active_filters);
 }
 
 /**
- * Подсчет товаров с учетом фильтров
+ * Подсчет товаров с учетом фильтров (старая версия для обратной совместимости)
  */
 function severcon_count_products_with_filters($category_id, $current_taxonomy, $current_term_slug, $active_filters) {
-    $args = array(
-        'post_type'      => 'product',
-        'post_status'    => 'publish',
-        'posts_per_page' => -1,
-        'fields'         => 'ids',
-        'tax_query'      => array(
-            'relation' => 'AND'
-        )
-    );
-    
-    // Категория
-    $args['tax_query'][] = array(
-        'taxonomy' => 'product_cat',
-        'field'    => 'term_id',
-        'terms'    => $category_id,
-        'include_children' => true
-    );
-    
-    // Текущий термин
-    $args['tax_query'][] = array(
-        'taxonomy' => $current_taxonomy,
-        'field'    => 'slug',
-        'terms'    => $current_term_slug
-    );
-    
-    // Остальные активные фильтры (кроме текущего атрибута)
-    foreach ($active_filters as $taxonomy => $terms) {
-        if ($taxonomy !== $current_taxonomy && !empty($terms) && is_array($terms)) {
-            $args['tax_query'][] = array(
-                'taxonomy' => $taxonomy,
-                'field'    => 'slug',
-                'terms'    => array_map('sanitize_text_field', $terms),
-                'operator' => 'IN'
-            );
+    // Используем новую оптимизированную функцию
+    return severcon_optimized_count_products($category_id, $current_taxonomy, $current_term_slug, $active_filters);
+}
+
+// ============================================================================
+// 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (должны быть в security.php)
+// ============================================================================
+
+// Если этих функций нет в security.php, они будут определены здесь как запасной вариант
+if (!function_exists('severcon_verify_ajax_request')) {
+    /**
+     * Проверка AJAX запроса
+     */
+    function severcon_verify_ajax_request($nonce_action) {
+        if (!check_ajax_referer($nonce_action, 'nonce', false)) {
+            wp_send_json_error(array(
+                'message' => __('Ошибка безопасности', 'severcon'),
+                'code'    => 'invalid_nonce'
+            ));
+            return false;
         }
+        return true;
     }
-    
-    $query = new WP_Query($args);
-    return $query->found_posts;
 }
 
-/**
- * Проверка выбран ли термин
- */
-function severcon_is_term_selected($taxonomy, $term_slug, $active_filters) {
-    if (!isset($active_filters[$taxonomy]) || !is_array($active_filters[$taxonomy])) {
-        return false;
+if (!function_exists('severcon_get_post_var')) {
+    /**
+     * Безопасное получение переменной из POST
+     */
+    function severcon_get_post_var($key, $default = '') {
+        return isset($_POST[$key]) ? $_POST[$key] : $default;
     }
-    
-    return in_array($term_slug, $active_filters[$taxonomy]);
 }
 
-/**
- * Генерация HTML для фильтров
- */
-function severcon_generate_filters_html($category_id) {
-    if (!$category_id) {
-        return '';
+if (!function_exists('severcon_validate_id')) {
+    /**
+     * Валидация ID
+     */
+    function severcon_validate_id($value) {
+        $value = intval($value);
+        return $value > 0 ? $value : 0;
     }
-    
-    $attribute_taxonomies = wc_get_attribute_taxonomies();
-    
-    if (empty($attribute_taxonomies)) {
-        return '<p class="no-filters">' . __('Фильтры не настроены', 'severcon') . '</p>';
-    }
-    
-    ob_start();
-    ?>
-    <div class="severcon-filters-container" data-category-id="<?php echo esc_attr($category_id); ?>">
-        <div class="filters-header">
-            <h3 class="filters-title"><?php _e('Фильтры', 'severcon'); ?></h3>
-            <button type="button" class="clear-all-filters" aria-label="<?php _e('Очистить все фильтры', 'severcon'); ?>">
-                <?php _e('Очистить все', 'severcon'); ?>
-            </button>
-        </div>
-        
-        <div class="filters-body">
-            <?php foreach ($attribute_taxonomies as $attribute) : 
-                $taxonomy = 'pa_' . $attribute->attribute_name;
-                $terms = get_terms(array(
-                    'taxonomy'   => $taxonomy,
-                    'hide_empty' => true,
-                ));
-                
-                if (is_wp_error($terms) || empty($terms)) {
-                    continue;
-                }
-            ?>
-                <div class="filter-group" data-attribute="<?php echo esc_attr($attribute->attribute_name); ?>">
-                    <div class="filter-group-header">
-                        <h4 class="filter-group-title">
-                            <?php echo esc_html($attribute->attribute_label); ?>
-                        </h4>
-                        <button type="button" class="filter-group-toggle" aria-expanded="false">
-                            <span class="toggle-icon">+</span>
-                        </button>
-                    </div>
-                    
-                    <div class="filter-group-body" style="display: none;">
-                        <div class="filter-search">
-                            <input type="text" 
-                                   class="filter-search-input" 
-                                   placeholder="<?php _e('Поиск...', 'severcon'); ?>"
-                                   data-taxonomy="<?php echo esc_attr($taxonomy); ?>">
-                        </div>
-                        
-                        <div class="filter-items">
-                            <?php foreach ($terms as $term) : 
-                                $count = severcon_count_products_with_filters($category_id, $taxonomy, $term->slug, array());
-                            ?>
-                                <label class="filter-item <?php echo $count === 0 ? 'disabled' : ''; ?>" 
-                                       data-term-slug="<?php echo esc_attr($term->slug); ?>"
-                                       data-term-id="<?php echo esc_attr($term->term_id); ?>">
-                                    <input type="checkbox" 
-                                           class="filter-checkbox" 
-                                           name="<?php echo esc_attr($taxonomy); ?>[]" 
-                                           value="<?php echo esc_attr($term->slug); ?>"
-                                           <?php echo $count === 0 ? 'disabled' : ''; ?>>
-                                    <span class="filter-item-text"><?php echo esc_html($term->name); ?></span>
-                                    <span class="filter-item-count">(<?php echo $count; ?>)</span>
-                                </label>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-        
-        <div class="filters-footer">
-            <button type="button" class="apply-filters btn btn-primary">
-                <?php _e('Применить фильтры', 'severcon'); ?>
-            </button>
-            <button type="button" class="reset-filters btn btn-secondary">
-                <?php _e('Сбросить', 'severcon'); ?>
-            </button>
-        </div>
-    </div>
-    <?php
-    
-    return ob_get_clean();
 }
 
-/**
- * Шорткод для вывода фильтров
- */
-function severcon_filters_shortcode($atts) {
-    $atts = shortcode_atts(array(
-        'category_id' => 0,
-    ), $atts, 'severcon_filters');
-    
-    $category_id = intval($atts['category_id']);
-    
-    if (!$category_id) {
-        $category_id = severcon_get_current_category_id();
+if (!function_exists('severcon_clean_input')) {
+    /**
+     * Очистка входных данных
+     */
+    function severcon_clean_input($data) {
+        if (is_array($data)) {
+            return array_map('severcon_clean_input', $data);
+        }
+        return is_scalar($data) ? sanitize_text_field($data) : $data;
     }
-    
-    return severcon_generate_filters_html($category_id);
 }
-add_shortcode('severcon_filters', 'severcon_filters_shortcode');

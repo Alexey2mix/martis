@@ -5471,3 +5471,19 @@ body.modal-open {
         margin-left: 0;
     }
 }
+
+
+/* Основные стили для шапки */
+.site-header {
+    background: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    position: relative;
+    z-index: 1000;
+}
+
+.site-header__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+}

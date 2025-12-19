@@ -27,7 +27,6 @@ function severcon_init_woocommerce_customizations() {
     // ========================================================================
     
     // Удаляем стандартные breadcrumbs WooCommerce
-    // Наши breadcrumbs в inc/components/breadcrumbs.php
     remove_action( 'woocommerce_before_main_content', 'woocommerce_breadcrumb', 20 );
     
     // Удаляем рейтинг из цикла товаров
@@ -220,7 +219,7 @@ function severcon_add_quick_view_button() {
 }
 
 // ============================================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ТОЛЬКО УНИКАЛЬНЫЕ)
 // ============================================================================
 
 /**
@@ -252,89 +251,6 @@ function severcon_get_cart_total() {
     return WC()->cart->get_cart_total();
 }
 
-/**
- * Получение цены товара с учетом скидки
- */
-function severcon_get_product_price_html( $product_id = null ) {
-    if ( ! severcon_woocommerce_is_active() ) {
-        return '';
-    }
-    
-    $product = wc_get_product( $product_id );
-    
-    if ( ! $product ) {
-        return '';
-    }
-    
-    return $product->get_price_html();
-}
-
-/**
- * Проверка, новый ли товар (добавлен менее N дней назад)
- */
-function severcon_is_new_product( $product_id, $days = 7 ) {
-    if ( ! severcon_woocommerce_is_active() ) {
-        return false;
-    }
-    
-    $product = wc_get_product( $product_id );
-    
-    if ( ! $product ) {
-        return false;
-    }
-    
-    $date_created = $product->get_date_created();
-    
-    if ( ! $date_created ) {
-        return false;
-    }
-    
-    $now = new DateTime();
-    $created = new DateTime( $date_created->format( 'Y-m-d H:i:s' ) );
-    $interval = $now->diff( $created );
-    
-    return $interval->days <= $days;
-}
-
-/**
- * Получение рейтинга товара в виде HTML
- */
-function severcon_get_product_rating_html( $product_id = null ) {
-    if ( ! severcon_woocommerce_is_active() ) {
-        return '';
-    }
-    
-    $product = wc_get_product( $product_id );
-    
-    if ( ! $product ) {
-        return '';
-    }
-    
-    $rating_count = $product->get_rating_count();
-    $average_rating = $product->get_average_rating();
-    
-    if ( $rating_count <= 0 ) {
-        return '';
-    }
-    
-    ob_start();
-    ?>
-    <div class="severcon-product-rating">
-        <div class="star-rating" role="img" aria-label="<?php echo esc_attr( sprintf( __( 'Рейтинг %s из 5', 'severcon' ), $average_rating ) ); ?>">
-            <span style="width:<?php echo esc_attr( ( $average_rating / 5 ) * 100 ); ?>%">
-                <?php printf( __( 'Рейтинг %s из 5', 'severcon' ), '<strong class="rating">' . esc_html( $average_rating ) . '</strong>' ); ?>
-            </span>
-        </div>
-        <?php if ( $rating_count > 0 ) : ?>
-            <span class="rating-count">
-                (<?php echo esc_html( $rating_count ); ?>)
-            </span>
-        <?php endif; ?>
-    </div>
-    <?php
-    return ob_get_clean();
-}
-
 // ============================================================================
 // ФИЛЬТРЫ ДЛЯ КАСТОМИЗАЦИИ
 // ============================================================================
@@ -342,61 +258,77 @@ function severcon_get_product_rating_html( $product_id = null ) {
 /**
  * Фильтр для изменения HTML вывода цены
  */
-add_filter( 'woocommerce_get_price_html', function( $price, $product ) {
-    if ( $product->is_on_sale() ) {
-        $price = '<span class="price sale-price">' . $price . '</span>';
-        $price .= '<span class="sale-badge">' . __( 'Скидка', 'severcon' ) . '</span>';
+add_action( 'init', function() {
+    if ( ! class_exists( 'WooCommerce' ) ) {
+        return;
     }
     
-    return $price;
-}, 10, 2 );
-
-/**
- * Фильтр для изменения количества связанных товаров
- */
-add_filter( 'woocommerce_output_related_products_args', function( $args ) {
-    $args['posts_per_page'] = 4; // 4 связанных товара
-    $args['columns'] = 4; // 4 колонки
-    return $args;
-} );
-
-/**
- * Фильтр для изменения количества товаров вверх/вниз
- */
-add_filter( 'woocommerce_quantity_input_args', function( $args, $product ) {
-    $args['input_value'] = 1; // Начальное значение
-    $args['max_value'] = $product->get_max_purchase_quantity(); // Максимум
-    $args['min_value'] = $product->get_min_purchase_quantity(); // Минимум
-    $args['step'] = 1; // Шаг
+    add_filter( 'woocommerce_get_price_html', function( $price, $product ) {
+        if ( $product->is_on_sale() ) {
+            $price = '<span class="price sale-price">' . $price . '</span>';
+            $price .= '<span class="sale-badge">' . __( 'Скидка', 'severcon' ) . '</span>';
+        }
+        
+        return $price;
+    }, 10, 2 );
     
-    return $args;
-}, 10, 2 );
+    /**
+     * Фильтр для изменения количества связанных товаров
+     */
+    add_filter( 'woocommerce_output_related_products_args', function( $args ) {
+        $args['posts_per_page'] = 4; // 4 связанных товара
+        $args['columns'] = 4; // 4 колонки
+        return $args;
+    } );
+    
+    /**
+     * Фильтр для изменения количества товаров вверх/вниз
+     */
+    add_filter( 'woocommerce_quantity_input_args', function( $args, $product ) {
+        $args['input_value'] = 1; // Начальное значение
+        $args['max_value'] = $product->get_max_purchase_quantity(); // Максимум
+        $args['min_value'] = $product->get_min_purchase_quantity(); // Минимум
+        $args['step'] = 1; // Шаг
+        
+        return $args;
+    }, 10, 2 );
+} );
 
 // ============================================================================
 // ХУКИ ДЛЯ ВЫВОДА ДОПОЛНИТЕЛЬНОЙ ИНФОРМАЦИИ
 // ============================================================================
 
-/**
- * Вывод дополнительной информации на странице товара
- */
-add_action( 'woocommerce_product_meta_start', function() {
-    global $product;
-    
-    if ( $product->get_sku() ) {
-        echo '<span class="sku-wrapper">';
-        echo '<span class="sku-label">' . __( 'Артикул:', 'severcon' ) . '</span> ';
-        echo '<span class="sku">' . esc_html( $product->get_sku() ) . '</span>';
-        echo '</span>';
+add_action( 'init', function() {
+    if ( ! class_exists( 'WooCommerce' ) ) {
+        return;
     }
+    
+    /**
+     * Вывод дополнительной информации на странице товара
+     */
+    add_action( 'woocommerce_product_meta_start', function() {
+        global $product;
+        
+        if ( $product->get_sku() ) {
+            echo '<span class="sku-wrapper">';
+            echo '<span class="sku-label">' . __( 'Артикул:', 'severcon' ) . '</span> ';
+            echo '<span class="sku">' . esc_html( $product->get_sku() ) . '</span>';
+            echo '</span>';
+        }
+    } );
+    
+    /**
+     * Вывод блока "Новинка" для новых товаров
+     * Используем функцию из helpers.php
+     */
+    add_action( 'woocommerce_before_shop_loop_item_title', function() {
+        global $product;
+        
+        // Проверяем, существует ли функция (она в helpers.php)
+        if ( function_exists( 'severcon_is_new_product' ) ) {
+            if ( severcon_is_new_product( $product->get_id(), 30 ) ) {
+                echo '<span class="new-badge">' . __( 'Новинка', 'severcon' ) . '</span>';
+            }
+        }
+    }, 5 );
 } );
-
-/**
- * Вывод блока "Новинка" для новых товаров
- */
-add_action( 'woocommerce_before_shop_loop_item_title', function() {
-    global $product;
-    
-    if ( severcon_is_new_product( $product->get_id(), 30 ) ) {
-        echo '<span class="new-badge">' . __( 'Новинка', 'severcon' ) . '</span>';
-    }
-}, 5 );
